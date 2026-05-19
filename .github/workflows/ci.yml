@@ -38,7 +38,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd app
-          pytest tests/ -v \
+          PYTHONPATH=. pytest tests/ -v \
             --cov=app \
             --cov-report=term-missing \
             --cov-report=xml \
