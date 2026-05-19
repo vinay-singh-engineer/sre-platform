@@ -1,4 +1,4 @@
-# SRE Platform
+# SRE Platform 🚀
 
 A production-grade Site Reliability Engineering reference implementation on AWS.
 Demonstrates the full SRE lifecycle: instrumenting a service, defining SLOs,
@@ -46,7 +46,7 @@ observing error budget burn rates, alerting, automated runbooks, and chaos engin
 ### Key SRE Components
 
 | Component | Technology | What it demonstrates |
-|---|---|---|
+|:---|:---|:---|
 | Flask app | Python + Gunicorn | RED instrumentation, structured logs, health probes |
 | Container | Docker / ECR | Immutable image, healthcheck, non-root user |
 | Infra | Terraform modules | Modular IaC, ECS Fargate, ALB, auto-scaling |
@@ -357,3 +357,11 @@ teams run — learning it transfers directly.
 ## License
 
 MIT — use freely, attribute appreciated.
+
+---
+
+## 💻 Author
+
+[Vinay Singh](https://vinay-singh-engineer.github.io/portfolio)
+
+---
