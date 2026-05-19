@@ -2,11 +2,8 @@
 
 A production-grade Site Reliability Engineering reference implementation on AWS.
 Demonstrates the full SRE lifecycle: instrumenting a service, defining SLOs,
-observing error budget burn rates, alerting, automated runbooks, load testing,
-and chaos engineering.
+observing error budget burn rates, alerting, automated runbooks, and chaos engineering.
 
-> **Interview-ready** — every component maps to a real SRE practice you'll be
-> asked about. Built to be deployed, not just read.
 
 ---
 
@@ -58,7 +55,6 @@ and chaos engineering.
 | Dashboards | Grafana | SLO dashboard with error budget gauge, RED panels |
 | Alerting | Alertmanager | Multi-severity routing, Slack + PagerDuty |
 | Logs | Loki + Promtail | Structured JSON log aggregation, log correlation |
-| Load testing | k6 | Smoke / load / stress scripts with SLO thresholds |
 | Runbooks | Markdown + Python | Documented + automated incident response |
 | Chaos | Endpoint injection | Error rate, latency, DB failure scenarios |
 | SLOs | Google SRE Workbook | Multi-window burn rate alerting, error budget policy |
@@ -74,9 +70,9 @@ cd sre-platform
 # Start the full stack (app + Prometheus + Grafana + Loki)
 docker compose up --build
 
-# App:          http://localhost:8000
+# App:          http://localhost:8000/health/live
 # Grafana:      http://localhost:3000  (admin / admin)
-# Prometheus:   http://localhost:9090
+# Prometheus:   http://localhost:9091
 # Alertmanager: http://localhost:9093
 ```
 
@@ -103,53 +99,73 @@ curl http://localhost:8000/metrics
 ```bash
 cd app
 pip install -r requirements.txt pytest pytest-cov
-pytest tests/ -v --cov=app --cov-report=term-missing
+PYTHONPATH=. pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
 ---
 
 ## Chaos Engineering
 
-The app exposes chaos endpoints to simulate real failure modes. Use them to:
+The app exposes chaos endpoints to simulate real failure modes. Use them to verify alerts fire correctly, practice incident response, and validate the full observability pipeline end-to-end.
 
-- Verify your alerts fire correctly
-- Practice incident response against the runbooks
-- Validate that auto-scaling and circuit-breaker logic kicks in
+### Scenario 1 — Error rate spike
+
+**Simulate:**
+```bash
+# Inject 20% random 500 errors
+curl -X POST http://localhost:8000/chaos/error-rate/0.2
+```
+
+**Verify:**
+- Prometheus (`http://localhost:9091`): `sum(rate(http_requests_total{status_code=~"5.."}[1m]))` rises above 0
+- Alertmanager (`http://localhost:9093`): `SLOErrorBudgetBurnRateCritical` fires within ~2 minutes
+- Grafana (`http://localhost:3000`): Error Budget gauge drops, burn rate graph spikes
+
+### Scenario 2 — Latency injection
+
+**Simulate:**
+```bash
+# Add 300ms artificial latency to every request
+curl -X POST http://localhost:8000/chaos/latency/300
+```
+
+**Verify:**
+- Prometheus: `histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))` exceeds 0.5
+- Alertmanager: `SLOLatencyBudgetBurnRateCritical` fires within ~5 minutes
+- Grafana: p99 latency panel turns red
+
+### Scenario 3 — Database failure
+
+**Simulate:**
+```bash
+# Mark database as unavailable
+curl -X POST http://localhost:8000/chaos/db-down
+```
+
+**Verify:**
+- Health probe: `curl http://localhost:8000/health/ready` returns `503`
+- Prometheus: `db_up{job="sre-platform"}` drops to `0`
+- Any request to `/api/items` returns `503`
+
+### Reset
 
 ```bash
-# Inject 20% random 500 errors → triggers SLOErrorBudgetBurnRateCritical
-curl -X POST http://localhost:8000/chaos/error-rate/0.2
-
-# Add 300ms artificial latency → triggers SLOLatencyBudgetBurnRateCritical
-curl -X POST http://localhost:8000/chaos/latency/300
-
-# Simulate DB failure → /health/ready returns 503
-curl -X POST http://localhost:8000/chaos/db-down
-
-# Reset everything
 curl -X POST http://localhost:8000/chaos/reset
 ```
 
-Watch the Grafana SLO dashboard update in real time as chaos is injected.
+> **Note:** `/chaos/reset` must be sent as `POST`. After reset, allow ~60 seconds for the Prometheus 1-minute rate window to clear before alerts resolve.
 
 ---
 
-## Load Testing
-
-Requires [k6](https://k6.io/docs/get-started/installation/).
+## Tear Down
 
 ```bash
-# Smoke test — run after every deployment
-k6 run --env BASE_URL=http://localhost:8000 load-testing/k6/smoke-test.js
+# Stop all containers, keep data volumes
+docker compose down
 
-# Load test — ramp to 25 VUs over 19 minutes
-k6 run --env BASE_URL=http://localhost:8000 load-testing/k6/load-test.js
-
-# Stress test — push to 200 VUs (use staging only!)
-k6 run --env BASE_URL=http://STAGING_URL load-testing/k6/stress-test.js
+# Stop and delete all data volumes (Prometheus TSDB, Grafana state, Loki logs)
+docker compose down -v
 ```
-
-Each test enforces SLO thresholds as k6 pass/fail criteria.
 
 ---
 
@@ -297,10 +313,6 @@ sre-platform/
 ├── .github/workflows/
 │   ├── ci.yml                  # Test, lint, SAST, Terraform validate
 │   └── deploy.yml              # Build → ECR → ECS → smoke test
-├── load-testing/k6/
-│   ├── smoke-test.js           # Post-deploy validation (SLO assertions)
-│   ├── load-test.js            # Realistic traffic (25 VUs, 19min)
-│   └── stress-test.js          # Find the breaking point (200 VUs)
 ├── runbooks/
 │   ├── high-error-rate.md      # Step-by-step incident response
 │   └── scripts/
@@ -338,7 +350,6 @@ teams run — learning it transfers directly.
 - [Google SRE Book](https://sre.google/sre-book/) — Chapter 4 (SLOs), Chapter 13 (emergency response)
 - [Google SRE Workbook](https://sre.google/workbook/alerting-on-slos/) — Multi-window burn rate alerting
 - [Prometheus docs](https://prometheus.io/docs/) — Recording rules, alerting rules
-- [k6 docs](https://k6.io/docs/) — Load testing with SLO thresholds
 - [Grafana docs](https://grafana.com/docs/) — Dashboard provisioning
 
 ---
