@@ -1,13 +1,13 @@
 # Copy this file to terraform.tfvars and fill in your values.
 # Never commit terraform.tfvars to git.
 
-aws_region  = "us-east-1"
-project     = "sre-platform"
-environment = "prod"
-
-grafana_admin_password = "CHANGE_ME_strong_password_here"
+grafana_admin_password   = "CHANGE_ME_strong_password_here"
+github_repo              = "vinay-singh-engineer/sre-platform"
 
 # Restrict monitoring UIs to your IP — don't leave as 0.0.0.0/0 in real prod
 monitoring_allowed_cidrs = ["YOUR_IP/32"]
+
+# Optional: set after first kubectl apply to wire Prometheus scraping
+# app_dns = "xxxx.us-east-1.elb.amazonaws.com"
 
 # ec2_key_name = "your-key-pair-name"  # needed for SSH access to monitoring EC2

@@ -8,7 +8,7 @@ Service Level Objectives (SLOs), and the error budget policy for the `sre-platfo
 ## Service Overview
 
 | Property | Value |
-|---|---|
+|:---|:---|
 | Service | `sre-platform` |
 | Owner | SRE Team |
 | Criticality | Tier 2 |
@@ -40,14 +40,14 @@ Prometheus expression:
 ### SLO Target
 
 | Window | Target | Error Budget |
-|---|---|---|
+|:---|:---|:---|
 | 30-day rolling | **99.9%** | 43.2 minutes/month |
 | 7-day rolling | 99.5% | 50.4 minutes/week |
 
 ### Burn Rate Alert Thresholds
 
 | Alert | Burn Rate | Short Window | Long Window | Severity | Budget Consumed |
-|---|---|---|---|---|---|
+|:---|:---|:---|:---|:---|:---|
 | `SLOErrorBudgetBurnRateCritical` | 14.4× | 5m | 1h | Critical | 2% in 1h |
 | `SLOErrorBudgetBurnRateHigh` | 6× | 1h | 6h | Warning | 5% in 6h |
 | `SLOErrorBudgetAlmostExhausted` | — | — | 30d | Warning | >90% consumed |
@@ -76,14 +76,14 @@ histogram_quantile(0.99,
 ### SLO Target
 
 | Percentile | Target | Window |
-|---|---|---|
+|:---|:---|:---|
 | p99 | **< 500ms** | 5-minute rolling |
 | p95 | < 200ms | 5-minute rolling |
 
 ### Burn Rate Alert Thresholds
 
 | Alert | Condition | Severity |
-|---|---|---|
+|:---|:---|:---|
 | `SLOLatencyBudgetBurnRateCritical` | p99 > 500ms for 5m (both windows) | Critical |
 | `SLOLatencyBudgetBurnRateWarning` | p99 > 250ms for 15m | Warning |
 
@@ -100,7 +100,7 @@ histogram_quantile(0.99,
 ### Thresholds and Actions
 
 | Budget Remaining | State | Actions |
-|---|---|---|
+|:---|:---|:---|
 | > 50% | Green | Normal operations; chaos testing permitted |
 | 25–50% | Yellow | Notify team; review release cadence |
 | 10–25% | Orange | Freeze non-critical deployments; post-mortems required for all incidents |

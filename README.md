@@ -24,7 +24,7 @@ observing error budget burn rates, alerting, automated runbooks, and chaos engin
 │  │                                                             │ │
 │  │  Public Subnets          Private Subnets                    │ │
 │  │  ┌──────────┐           ┌──────────────────────────────┐    │ │
-│  │  │   ALB    │──────────▶│  ECS Fargate (2–10 tasks)    │    │ │
+│  │  │   ALB    │──────────▶│  EKS (2–10 pods)             │    │ │
 │  │  │  (HTTP)  │           │  Flask + Gunicorn :8000      │    │ │
 │  │  └──────────┘           │  /health/live  /health/ready │    │ │
 │  │       ▲                 │  /metrics      /api/items    │    │ │
@@ -48,7 +48,7 @@ observing error budget burn rates, alerting, automated runbooks, and chaos engin
 |:---|:---|:---|
 | Flask app | Python + Gunicorn | RED instrumentation, structured logs, health probes |
 | Container | Docker / ECR | Immutable image, healthcheck, non-root user |
-| Infra | Terraform modules | Modular IaC, ECS Fargate, ALB, auto-scaling |
+| Infra | Terraform modules | Modular IaC, EKS cluster, managed node group, ECR |
 | CI/CD | GitHub Actions | OIDC auth, test matrix, SAST, smoke-test gate |
 | Metrics | Prometheus | SLI recording rules, multi-window burn rate rules |
 | Dashboards | Grafana | SLO dashboard with error budget gauge, RED panels |
@@ -175,6 +175,7 @@ docker compose down -v
 - AWS account with appropriate permissions
 - Terraform ≥ 1.7
 - AWS CLI configured
+- kubectl installed
 - Docker (for building the image)
 
 ### 1. Configure the backend
@@ -194,7 +195,7 @@ Update `terraform/environments/prod/main.tf` backend block with your bucket name
 ```bash
 cd terraform/environments/prod
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
+# Edit terraform.tfvars — set grafana_admin_password, github_repo, monitoring_allowed_cidrs
 ```
 
 ### 3. Deploy infrastructure
@@ -205,9 +206,20 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Terraform outputs the ALB URL, ECR repository URL, and Grafana URL.
+Terraform provisions the VPC, EKS cluster, ECR repository, GitHub Actions IAM role, and monitoring EC2. Outputs the cluster name, ECR URL, and Grafana URL.
 
-### 4. Build and push the initial image
+### 4. Configure kubectl
+
+```bash
+aws eks update-kubeconfig \
+  --region us-east-1 \
+  --name $(terraform output -raw eks_cluster_name)
+
+# Verify nodes are ready
+kubectl get nodes
+```
+
+### 5. Build, push, and deploy the initial image
 
 ```bash
 # Login to ECR
@@ -218,20 +230,22 @@ aws ecr get-login-password --region us-east-1 | \
 docker build -t $(terraform output -raw ecr_repository_url):latest ./app
 docker push $(terraform output -raw ecr_repository_url):latest
 
-# Force ECS to use the new image
-aws ecs update-service \
-  --cluster $(terraform output -raw ecs_cluster_name) \
-  --service $(terraform output -raw ecs_service_name) \
-  --force-new-deployment
+# Inject image and deploy to EKS
+sed "s|REPLACE_WITH_ECR_IMAGE|$(terraform output -raw ecr_repository_url):latest|g" \
+  k8s/deployment.yml | kubectl apply -f -
+kubectl apply -f k8s/
+
+# Wait for pods to be ready
+kubectl rollout status deployment/sre-platform --namespace sre-platform
 ```
 
-### 5. Configure GitHub Actions
+### 6. Configure GitHub Actions
 
-Add these secrets to your GitHub repository:
+Add this secret to your GitHub repository:
 
 | Secret | Value |
-|---|---|
-| `AWS_DEPLOY_ROLE_ARN` | ARN of IAM role with ECS deploy permissions |
+|:---|:---|
+| `AWS_DEPLOY_ROLE_ARN` | Value of `terraform output github_deploy_role_arn` |
 
 The CI/CD uses OIDC — no long-lived AWS credentials stored in GitHub.
 
@@ -246,9 +260,9 @@ Each workflow is made up of **jobs**, which contain **steps**. GitHub detects an
 Workflow files live in `.github/workflows/` — on Mac, folders starting with `.` are hidden in Finder; press `Cmd + Shift + .` to toggle visibility, or browse them directly in the GitHub UI under the repo's **Actions** tab.
 
 | Workflow | What it does | Trigger |
-|---|---|---|
+|:---|:---|:---|
 | `ci.yml` | Tests, lint, SAST, Docker build, Terraform validate | Automatically on every push or PR that touches `app/` |
-| `deploy.yml` | Build → ECR push → ECS deploy → smoke test | Manually only — go to **Actions → Deploy → Run workflow** in GitHub UI |
+| `deploy.yml` | Build → ECR push → EKS deploy → smoke test | Manually only — go to **Actions → Deploy → Run workflow** in GitHub UI |
 
 > `deploy.yml` requires AWS infrastructure to be provisioned and `AWS_DEPLOY_ROLE_ARN` secret set before use.
 
@@ -305,12 +319,18 @@ sre-platform/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── tests/test_app.py
+├── k8s/                        # Kubernetes manifests
+│   ├── namespace.yml
+│   ├── configmap.yml
+│   ├── deployment.yml          # Rolling update, liveness/readiness probes
+│   ├── service.yml             # LoadBalancer service
+│   └── hpa.yml                 # Horizontal Pod Autoscaler (CPU + memory)
 ├── terraform/
 │   ├── modules/
 │   │   ├── networking/         # VPC, subnets, NAT gateways
-│   │   ├── ecs/                # ECS Fargate, ALB, auto-scaling, ECR
+│   │   ├── eks/                # EKS cluster, node group, ECR, OIDC provider
 │   │   ├── monitoring/         # Monitoring EC2, security groups
-│   │   └── iam/                # ECS task & execution roles
+│   │   └── iam/                # GitHub Actions OIDC deploy role
 │   └── environments/prod/      # Root module for production
 ├── monitoring/
 │   ├── prometheus/
@@ -328,7 +348,7 @@ sre-platform/
 │       └── promtail-config.yml
 ├── .github/workflows/
 │   ├── ci.yml                  # Test, lint, SAST, Terraform validate
-│   └── deploy.yml              # Build → ECR → ECS → smoke test
+│   └── deploy.yml              # Build → ECR → EKS → smoke test
 ├── runbooks/
 │   ├── high-error-rate.md      # Step-by-step incident response
 │   └── scripts/
@@ -358,6 +378,13 @@ changes. In production, these would be behind an auth gate or removed entirely.
 CloudWatch is fine for AWS-native metrics, but Prometheus + Grafana gives you portable,
 vendor-agnostic SLO dashboards with PromQL's expressiveness. This is the stack most SRE
 teams run — learning it transfers directly.
+
+**Why EKS over ECS Fargate?**
+EKS gives you the full Kubernetes API — HPA, rolling updates, liveness/readiness probes,
+namespace isolation, and a declarative manifest model that's portable across any cloud.
+ECS is simpler to operate but is AWS-only and abstracts away primitives that most
+platform engineering roles expect you to know. For an SRE portfolio, EKS demonstrates
+deeper operational depth.
 
 ---
 

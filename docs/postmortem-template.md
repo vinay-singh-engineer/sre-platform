@@ -8,7 +8,7 @@ Focus is on systems and processes, not individuals.
 ## Incident Summary
 
 | Field | Value |
-|---|---|
+|:---|:---|
 | **Incident ID** | INC-YYYY-NNN |
 | **Date** | YYYY-MM-DD |
 | **Duration** | HH:MM — HH:MM UTC (X minutes) |
@@ -42,8 +42,8 @@ creating items experienced failures. Read operations were unaffected. ~1,800 req
 All times in UTC.
 
 | Time | Event |
-|---|---|
-| HH:MM | Deployment of `v1.2.3` to ECS (GitHub Actions run #NNN) |
+|:---|:---|
+| HH:MM | Deployment of `v1.2.3` to EKS (GitHub Actions run #NNN) |
 | HH:MM | `SLOErrorBudgetBurnRateCritical` alert fired (14.4× burn rate) |
 | HH:MM | On-call engineer acknowledged PagerDuty alert |
 | HH:MM | Engineer confirmed 5xx on `/api/items POST` endpoint |
@@ -112,7 +112,7 @@ Blameless postmortems celebrate things that worked.
 Each action item must have an owner and a due date. Use your issue tracker.
 
 | # | Action | Owner | Due date | Ticket |
-|---|---|---|---|---|
+|:---|:---|:---|:---|:---|
 | 1 | Add load test with 10k items to CI pipeline | @eng-name | YYYY-MM-DD | #NNN |
 | 2 | Configure ECS task memory alarm in CloudWatch | @sre-name | YYYY-MM-DD | #NNN |
 | 3 | Add memory-based auto-scaling policy | @sre-name | YYYY-MM-DD | #NNN |

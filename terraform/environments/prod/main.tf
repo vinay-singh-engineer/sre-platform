@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.50"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   backend "s3" {
@@ -46,28 +50,25 @@ module "networking" {
 }
 
 module "iam" {
-  source = "../../modules/iam"
-  name   = local.name
-  tags   = local.common_tags
+  source      = "../../modules/iam"
+  name        = local.name
+  github_repo = var.github_repo
+  tags        = local.common_tags
 }
 
-module "ecs" {
-  source = "../../modules/ecs"
+module "eks" {
+  source = "../../modules/eks"
 
   name               = local.name
   vpc_id             = module.networking.vpc_id
   public_subnet_ids  = module.networking.public_subnet_ids
   private_subnet_ids = module.networking.private_subnet_ids
-  execution_role_arn = module.iam.execution_role_arn
-  task_role_arn      = module.iam.task_role_arn
 
-  environment   = var.environment
-  image_tag     = var.image_tag
-  desired_count = var.desired_count
-  min_count     = var.min_count
-  max_count     = var.max_count
-  task_cpu      = var.task_cpu
-  task_memory   = var.task_memory
+  kubernetes_version = var.kubernetes_version
+  node_instance_type = var.node_instance_type
+  node_desired_count = var.node_desired_count
+  node_min_count     = var.node_min_count
+  node_max_count     = var.node_max_count
 
   tags = local.common_tags
 }
@@ -80,7 +81,7 @@ module "monitoring" {
   subnet_id              = module.networking.public_subnet_ids[0]
   vpc_cidr_blocks        = [var.vpc_cidr]
   allowed_cidr_blocks    = var.monitoring_allowed_cidrs
-  app_alb_dns            = module.ecs.alb_dns_name
+  app_alb_dns            = var.app_dns
   grafana_admin_password = var.grafana_admin_password
   key_name               = var.ec2_key_name
 

@@ -57,7 +57,7 @@ curl -s http://ALB_DNS/health/ready | python3 -m json.tool
 **Common patterns:**
 
 | Error pattern | Likely cause | Go to |
-|---|---|---|
+|:---|:---|:---|
 | All endpoints 5xx | App crash / OOM | Step 3a |
 | `/health/ready` 503 | DB connection lost | Step 3b |
 | Specific endpoint only | Code bug in that path | Step 3c |

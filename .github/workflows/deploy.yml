@@ -17,8 +17,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: sre-platform-prod
-  ECS_CLUSTER: sre-platform-prod
-  ECS_SERVICE: sre-platform-prod
+  EKS_CLUSTER: sre-platform-prod
 
 jobs:
   deploy:
@@ -65,77 +64,51 @@ jobs:
           labels: |
             git.commit=${{ github.sha }}
             git.branch=${{ github.ref_name }}
-            build.date=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update ECS service
-        id: deploy
+      - name: Configure kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER }}
+
+      - name: Inject image into deployment manifest
         run: |
           IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}"
+          sed -i "s|REPLACE_WITH_ECR_IMAGE|$IMAGE|g" k8s/deployment.yml
 
-          # Get current task definition
-          TASK_DEF=$(aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_SERVICE }} \
-            --query taskDefinition)
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/
 
-          # Swap container image
-          NEW_TASK_DEF=$(echo "$TASK_DEF" | python3 -c "
-          import sys, json
-          td = json.load(sys.stdin)
-          for c in td['containerDefinitions']:
-              if c['name'] == '${{ env.ECS_SERVICE }}':
-                  c['image'] = '$IMAGE'
-          # Remove fields that can't be in RegisterTaskDefinition
-          for key in ['taskDefinitionArn','revision','status','requiresAttributes',
-                      'compatibilities','registeredAt','registeredBy']:
-              td.pop(key, None)
-          print(json.dumps(td))
-          ")
-
-          # Register new task definition
-          NEW_TASK_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "$NEW_TASK_DEF" \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-          echo "new_task_arn=$NEW_TASK_ARN" >> $GITHUB_OUTPUT
-
-          # Update service
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --task-definition "$NEW_TASK_ARN"
-
-      - name: Wait for stable deployment
+      - name: Wait for rollout
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
-        timeout-minutes: 10
+          kubectl rollout status deployment/sre-platform \
+            --namespace sre-platform \
+            --timeout=300s
 
       - name: Smoke test
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "${{ env.ECS_CLUSTER }}-alb" \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)
+          LB_HOST=$(kubectl get service sre-platform \
+            --namespace sre-platform \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 
-          for i in {1..5}; do
-            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://$ALB_DNS/health/ready" || echo "000")
+          for i in {1..10}; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://$LB_HOST/health/ready" || echo "000")
             echo "Attempt $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test passed."
               exit 0
             fi
-            sleep 10
+            sleep 15
           done
-          echo "Smoke test FAILED after 5 attempts"
+          echo "Smoke test FAILED after 10 attempts"
           exit 1
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::Deployment failed for ${{ github.sha }}. Check ECS console."
+          echo "::error::Deployment failed for ${{ github.sha }}. Check EKS console."
           # Wire this to Slack/PagerDuty in real setups:
           # curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
           #   -d '{"text":"DEPLOY FAILED: ${{ github.repository }}@${{ github.sha }}"}'
