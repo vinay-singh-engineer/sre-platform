@@ -1,0 +1,50 @@
+route:
+  receiver: default
+  group_by: [alertname, job, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical SLO alerts → page immediately
+    - match:
+        severity: critical
+        slo: availability
+      receiver: pagerduty-critical
+      repeat_interval: 1h
+
+    # Critical infra alerts
+    - match:
+        severity: critical
+      receiver: pagerduty-critical
+      repeat_interval: 1h
+
+    # Warning-level → Slack only
+    - match:
+        severity: warning
+      receiver: slack-warnings
+      repeat_interval: 6h
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: "http://alert-echo:5001"
+        send_resolved: true
+
+  - name: pagerduty-critical
+    webhook_configs:
+      - url: "http://alert-echo:5001"
+        send_resolved: true
+
+  - name: slack-warnings
+    webhook_configs:
+      - url: "http://alert-echo:5001"
+        send_resolved: true
+
+inhibit_rules:
+  # Suppress warnings when a critical alert for the same job is firing
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname, job]

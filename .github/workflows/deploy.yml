@@ -1,0 +1,139 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: false
+        default: ""
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: sre-platform-prod
+  ECS_CLUSTER: sre-platform-prod
+  ECS_SERVICE: sre-platform-prod
+
+jobs:
+  deploy:
+    name: Build → Push → Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write   # OIDC auth to AWS
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push to ECR
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          labels: |
+            git.commit=${{ github.sha }}
+            git.branch=${{ github.ref_name }}
+            build.date=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update ECS service
+        id: deploy
+        run: |
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.tag }}"
+
+          # Get current task definition
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_SERVICE }} \
+            --query taskDefinition)
+
+          # Swap container image
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for c in td['containerDefinitions']:
+              if c['name'] == '${{ env.ECS_SERVICE }}':
+                  c['image'] = '$IMAGE'
+          # Remove fields that can't be in RegisterTaskDefinition
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes',
+                      'compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          # Register new task definition
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "new_task_arn=$NEW_TASK_ARN" >> $GITHUB_OUTPUT
+
+          # Update service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition "$NEW_TASK_ARN"
+
+      - name: Wait for stable deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+        timeout-minutes: 10
+
+      - name: Smoke test
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --names "${{ env.ECS_CLUSTER }}-alb" \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)
+
+          for i in {1..5}; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://$ALB_DNS/health/ready" || echo "000")
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Smoke test FAILED after 5 attempts"
+          exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed for ${{ github.sha }}. Check ECS console."
+          # Wire this to Slack/PagerDuty in real setups:
+          # curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+          #   -d '{"text":"DEPLOY FAILED: ${{ github.repository }}@${{ github.sha }}"}'

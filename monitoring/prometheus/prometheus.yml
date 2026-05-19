@@ -1,0 +1,45 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+    region: us-east-1
+
+rule_files:
+  - /etc/prometheus/alerts/slo_alerts.yml
+  - /etc/prometheus/alerts/infra_alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+      timeout: 10s
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The Flask application
+  - job_name: sre-platform
+    scrape_interval: 10s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:8000"]
+    relabel_configs:
+      - target_label: service
+        replacement: sre-platform
+
+  # Host metrics from node exporter
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Alertmanager
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]

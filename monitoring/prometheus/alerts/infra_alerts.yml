@@ -1,0 +1,82 @@
+groups:
+  - name: infrastructure
+    rules:
+      - alert: ServiceDown
+        expr: up{job="sre-platform"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN"
+          description: "Prometheus cannot scrape {{ $labels.instance }}. The service may be crashed."
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/service-unavailable.md"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5..",job="sre-platform"}[5m]))
+          /
+          sum(rate(http_requests_total{job="sre-platform"}[5m])) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Error rate above 5% for {{ $labels.job }}"
+          description: "HTTP 5xx rate is {{ $value | humanizePercentage }} over 5 minutes."
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/high-error-rate.md"
+
+      - alert: ReadinessProbeFailure
+        expr: |
+          sum(rate(http_requests_total{endpoint="/health/ready",status_code="503"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Readiness probe returning 503"
+          description: "The /health/ready endpoint is failing — downstream dependency (DB?) may be down."
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/service-unavailable.md"
+
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Node memory usage above 90% on {{ $labels.instance }}"
+          description: "Memory utilization is {{ $value | humanizePercentage }}."
+
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU usage at {{ $value }}% for 10 minutes."
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Disk space below 15% on {{ $labels.instance }}"
+          description: "Only {{ $value | humanizePercentage }} of disk space remains."
+
+      - alert: PrometheusScrapeFailing
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }} ({{ $labels.instance }})"
+          description: "Scrape target has been down for 5 minutes — check the target process."

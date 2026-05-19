@@ -1,0 +1,172 @@
+# SLO Alert Rules — based on the Google SRE Workbook multi-window approach
+#
+# SLO: 99.9% availability over a rolling 30-day window
+# Error budget: 43.2 minutes/month
+#
+# Burn rate alerting fires when errors are consumed at a rate that would
+# exhaust the entire error budget before the window ends.
+#
+# Two-window rule: alert only when BOTH a short and long window exceed
+# the burn rate threshold (reduces false positives from short spikes).
+
+groups:
+  - name: slo.availability
+    interval: 1m
+    rules:
+      # --------------------------------------------------------------------
+      # Recording rules — pre-compute error ratios for efficiency
+      # --------------------------------------------------------------------
+      - record: job:http_requests_total:rate5m
+        expr: rate(http_requests_total[5m])
+
+      - record: job:http_errors_total:rate5m
+        expr: rate(http_requests_total{status_code=~"5.."}[5m])
+
+      - record: job:http_error_ratio:rate5m
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (job)
+          /
+          sum(rate(http_requests_total[5m])) by (job)
+
+      - record: job:http_error_ratio:rate1h
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[1h])) by (job)
+          /
+          sum(rate(http_requests_total[1h])) by (job)
+
+      - record: job:http_error_ratio:rate6h
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[6h])) by (job)
+          /
+          sum(rate(http_requests_total[6h])) by (job)
+
+      - record: job:http_error_ratio:rate24h
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[24h])) by (job)
+          /
+          sum(rate(http_requests_total[24h])) by (job)
+
+      - record: job:http_error_ratio:rate3d
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[3d])) by (job)
+          /
+          sum(rate(http_requests_total[3d])) by (job)
+
+      # Error budget remaining (0 = exhausted, 1 = full)
+      - record: job:slo_error_budget_remaining:rate30d
+        expr: |
+          1 - (
+            sum(rate(http_requests_total{status_code=~"5.."}[30d])) by (job)
+            /
+            sum(rate(http_requests_total[30d])) by (job)
+          ) / (1 - 0.999)
+
+      # --------------------------------------------------------------------
+      # Page-worthy: fast burn  (>14.4x, 2% budget in 1h)
+      # Short window: 1h | Long window: 5m
+      # --------------------------------------------------------------------
+      - alert: SLOErrorBudgetBurnRateCritical
+        expr: |
+          job:http_error_ratio:rate1h{job="sre-platform"} > (14.4 * 0.001)
+          and
+          job:http_error_ratio:rate5m{job="sre-platform"} > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          team: sre
+        annotations:
+          summary: "CRITICAL: SLO error budget burning fast"
+          description: >
+            Error rate is {{ $value | humanizePercentage }} over the last hour.
+            At this burn rate (14.4x), 2% of the monthly error budget is consumed per hour.
+            Immediate action required.
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/high-error-rate.md"
+          dashboard_url: "http://grafana:3000/d/sre-slo/sre-platform-slo"
+
+      # --------------------------------------------------------------------
+      # Ticket: slow burn  (>6x, 5% budget in 6h)
+      # Short window: 6h | Long window: 1h
+      # --------------------------------------------------------------------
+      - alert: SLOErrorBudgetBurnRateHigh
+        expr: |
+          job:http_error_ratio:rate6h{job="sre-platform"} > (6 * 0.001)
+          and
+          job:http_error_ratio:rate1h{job="sre-platform"} > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+          team: sre
+        annotations:
+          summary: "WARNING: SLO error budget burn rate elevated"
+          description: >
+            Error rate is {{ $value | humanizePercentage }} over 6h.
+            At this rate (6x), 5% of the monthly error budget is consumed every 6 hours.
+            Investigate within 1 hour.
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/high-error-rate.md"
+
+      # --------------------------------------------------------------------
+      # Watchdog: budget nearly exhausted for this month
+      # --------------------------------------------------------------------
+      - alert: SLOErrorBudgetAlmostExhausted
+        expr: job:slo_error_budget_remaining:rate30d{job="sre-platform"} < 0.10
+        for: 5m
+        labels:
+          severity: warning
+          slo: availability
+          team: sre
+        annotations:
+          summary: "Error budget below 10% for the month"
+          description: >
+            Only {{ $value | humanizePercentage }} of the 30-day error budget remains.
+            All non-critical changes should be halted per error budget policy.
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/docs/error-budget-policy.md"
+
+  # --------------------------------------------------------------------------
+  # SLO: Latency — p99 < 500ms for 99% of requests
+  # --------------------------------------------------------------------------
+  - name: slo.latency
+    interval: 1m
+    rules:
+      - record: job:http_request_p99_seconds:rate5m
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, le)
+          )
+
+      - record: job:http_request_p99_seconds:rate1h
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[1h])) by (job, le)
+          )
+
+      - alert: SLOLatencyBudgetBurnRateCritical
+        expr: |
+          job:http_request_p99_seconds:rate5m{job="sre-platform"} > 0.5
+          and
+          job:http_request_p99_seconds:rate1h{job="sre-platform"} > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          slo: latency
+          team: sre
+        annotations:
+          summary: "CRITICAL: p99 latency exceeds SLO threshold (500ms)"
+          description: >
+            p99 request latency is {{ $value | humanizeDuration }} over the last 5 minutes.
+            SLO target: p99 < 500ms.
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/high-latency.md"
+
+      - alert: SLOLatencyBudgetBurnRateWarning
+        expr: job:http_request_p99_seconds:rate1h{job="sre-platform"} > 0.25
+        for: 15m
+        labels:
+          severity: warning
+          slo: latency
+          team: sre
+        annotations:
+          summary: "WARNING: p99 latency elevated (>250ms, SLO target 500ms)"
+          description: >
+            p99 latency is {{ $value | humanizeDuration }} — approaching SLO threshold.
+          runbook_url: "https://github.com/your-org/sre-platform/blob/main/runbooks/high-latency.md"

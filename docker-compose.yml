@@ -1,0 +1,134 @@
+# Local development stack
+# Usage: docker compose up --build
+#
+# Ports:
+#   8000  → Flask app
+#   9091  → Prometheus  (9090 reserved by Webex on Mac)
+#   3000  → Grafana  (admin/admin)
+#   3100  → Loki
+#   9093  → Alertmanager
+
+services:
+  app:
+    build: ./app
+    container_name: sre-app
+    environment:
+      - ENVIRONMENT=development
+      - APP_VERSION=local
+      - CHAOS_ERROR_RATE=0.0
+      - CHAOS_LATENCY_MS=0
+    ports:
+      - "8000:8000"
+    labels:
+      - "logging=promtail"
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: sre-prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+    ports:
+      - "9091:9090"
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+  alert-echo:
+    image: mendhak/http-https-echo:latest
+    container_name: sre-alert-echo
+    environment:
+      - HTTP_PORT=5001
+    ports:
+      - "5001:5001"
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: sre-alertmanager
+    environment:
+      # Placeholder values for local dev — replace with real URLs in production
+      - SLACK_WEBHOOK_URL=http://localhost:1/placeholder
+      - PAGERDUTY_INTEGRATION_KEY=placeholder-key
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: sre-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - sre-net
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: sre-loki
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: sre-promtail
+    volumes:
+      - ./monitoring/loki/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - sre-net
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.0
+    container_name: sre-node-exporter
+    # On Mac/Docker Desktop the host rootfs mount isn't supported — runs in container-only mode
+    networks:
+      - sre-net
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+networks:
+  sre-net:
+    driver: bridge
