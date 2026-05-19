@@ -5,7 +5,7 @@ import time
 import uuid
 import random
 import logging
-import json
+
 from datetime import datetime, timezone
 
 from flask import Flask, request, jsonify, g
@@ -328,6 +328,6 @@ def handle_404(exc):
 def handle_405(exc):
     return jsonify({"error": "method not allowed"}), 405
 
-# Main
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=False)

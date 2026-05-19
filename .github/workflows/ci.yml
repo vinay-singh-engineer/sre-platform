@@ -64,7 +64,7 @@ jobs:
           cache: pip
 
       - name: Install scanners
-        run: pip install bandit safety
+        run: pip install bandit pip-audit
 
       - name: Run Bandit (SAST)
         run: bandit -r app/app.py -ll -f json -o bandit-report.json || true
@@ -72,8 +72,8 @@ jobs:
       - name: Print Bandit findings
         run: cat bandit-report.json | python -m json.tool
 
-      - name: Run Safety (dependency CVEs)
-        run: safety check -r app/requirements.txt --full-report
+      - name: Run pip-audit (dependency CVEs)
+        run: pip-audit -r app/requirements.txt
 
   docker:
     name: Docker Build
