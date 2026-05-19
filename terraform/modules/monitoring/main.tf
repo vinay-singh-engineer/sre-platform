@@ -71,11 +71,11 @@ resource "aws_instance" "monitoring" {
     encrypted   = true
   }
 
-  user_data = templatefile("${path.module}/user_data.sh", {
-    prometheus_url = "http://${var.app_alb_dns}:80"
+  user_data_base64 = base64gzip(templatefile("${path.module}/user_data.sh", {
+    prometheus_url         = "http://${var.app_alb_dns}:80"
     grafana_admin_password = var.grafana_admin_password
     loki_retention_hours   = var.loki_retention_hours
-  })
+  }))
 
   tags = merge(var.tags, { Name = "${var.name}-monitoring" })
 
@@ -124,6 +124,11 @@ resource "aws_iam_role_policy" "monitoring" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "monitoring_ssm" {
+  role       = aws_iam_role.monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "monitoring" {

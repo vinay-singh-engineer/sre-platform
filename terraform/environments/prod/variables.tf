@@ -31,7 +31,7 @@ variable "github_repo" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "1.29"
+  default = "1.31"
 }
 
 variable "node_instance_type" {
@@ -57,6 +57,16 @@ variable "node_max_count" {
 variable "ec2_key_name" {
   type    = string
   default = null
+}
+
+variable "monitoring_instance_type" {
+  type    = string
+  default = "t3.small"
+}
+
+variable "loki_retention_hours" {
+  type    = number
+  default = 720
 }
 
 variable "grafana_admin_password" {

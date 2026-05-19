@@ -12,10 +12,9 @@ terraform {
   }
 
   backend "s3" {
-    # Configure via -backend-config or terraform.tfbackend
-    # bucket = "your-terraform-state-bucket"
-    # key    = "sre-platform/prod/terraform.tfstate"
-    # region = "us-east-1"
+    bucket = "sre-platform-tf-state-prod"
+    key    = "sre-platform/prod/terraform.tfstate"
+    region = "us-east-1"
   }
 }
 
@@ -82,6 +81,8 @@ module "monitoring" {
   vpc_cidr_blocks        = [var.vpc_cidr]
   allowed_cidr_blocks    = var.monitoring_allowed_cidrs
   app_alb_dns            = var.app_dns
+  instance_type          = var.monitoring_instance_type
+  loki_retention_hours   = var.loki_retention_hours
   grafana_admin_password = var.grafana_admin_password
   key_name               = var.ec2_key_name
 
