@@ -156,18 +156,6 @@ curl -X POST http://localhost:8000/chaos/reset
 
 ---
 
-## Tear Down
-
-```bash
-# Stop all containers, keep data volumes
-docker compose down
-
-# Stop and delete all data volumes (Prometheus TSDB, Grafana state, Loki logs)
-docker compose down -v
-```
-
----
-
 ## Deploy to AWS
 
 ### Prerequisites
@@ -248,6 +236,99 @@ Add this secret to your GitHub repository:
 | `AWS_DEPLOY_ROLE_ARN` | Value of `terraform output github_deploy_role_arn` |
 
 The CI/CD uses OIDC — no long-lived AWS credentials stored in GitHub.
+
+---
+
+## Verify the Deployment
+
+Run through these checks after deploying to confirm the full stack is working end-to-end.
+
+```bash
+ALB=<your-alb-dns>   # from: kubectl get svc -n sre-platform
+```
+
+### App health
+
+```bash
+curl http://$ALB/health/live
+curl http://$ALB/health/ready
+curl http://$ALB/metrics | head -20
+```
+
+### API
+
+```bash
+curl -X POST http://$ALB/api/items \
+  -H "Content-Type: application/json" \
+  -d '{"name":"verify","description":"end to end test"}'
+curl http://$ALB/api/items
+```
+
+### Kubernetes cluster
+
+```bash
+kubectl get nodes
+kubectl get pods -n sre-platform
+kubectl get svc -n sre-platform
+kubectl get hpa -n sre-platform
+```
+
+### Chaos (inject → verify → reset)
+
+```bash
+curl -X POST http://$ALB/chaos/error-rate/0.2
+curl http://$ALB/api/items        # occasionally returns 500
+curl -X POST http://$ALB/chaos/reset
+```
+
+### Monitoring stack
+
+```bash
+MONITORING_IP=<your-monitoring-ec2-ip>   # from: terraform output monitoring_url
+curl http://$MONITORING_IP:9090/-/ready   # Prometheus
+curl http://$MONITORING_IP:9093/-/ready   # Alertmanager
+curl http://$MONITORING_IP:3000/api/health # Grafana
+```
+
+### CI/CD
+
+| Check | How |
+| :--- | :--- |
+| CI (test, lint, scan) | Push any change to `app/` — watch **Actions → CI** go green |
+| CD (build → ECR → EKS) | **Actions → Deploy → Run workflow** — confirm new image lands on EKS |
+
+---
+
+## Tear Down
+
+### Local
+
+```bash
+# Stop all containers, keep data volumes
+docker compose down
+
+# Stop and delete all data volumes (Prometheus TSDB, Grafana state, Loki logs)
+docker compose down -v
+```
+
+### AWS (avoid ongoing charges)
+
+**Important:** Delete Kubernetes resources first — the LoadBalancer creates an AWS ELB that Terraform doesn't manage. If you run `terraform destroy` before deleting it, the VPC teardown will fail.
+
+```bash
+# 1. Delete Kubernetes resources (releases the AWS Load Balancer)
+kubectl delete -f k8s/
+
+# 2. Destroy all Terraform-managed infrastructure
+cd terraform/environments/prod
+terraform destroy
+
+# 3. (Optional) Delete the Terraform state bucket — only if you're done for good
+aws s3 rm s3://sre-platform-tf-state-prod --recursive
+aws s3 rb s3://sre-platform-tf-state-prod
+```
+
+> **Cost note:** The main cost drivers are the EKS cluster (~$0.10/hr), EC2 nodes (2× t3.medium ~$0.08/hr), monitoring EC2 (t3.small ~$0.02/hr), and NAT Gateway (~$0.045/hr). Running the full stack costs roughly **$6–8/day**.
 
 ---
 
