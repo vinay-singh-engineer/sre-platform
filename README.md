@@ -12,7 +12,7 @@ observing error budget burn rates, alerting, automated runbooks, and chaos engin
 ┌─────────────────────────────────────────────────────────────────┐
 │                          GitHub Actions                         │
 │  ┌────────────┐   ┌──────────────────────────────────────────┐  │
-│  │  CI (test  │   │  CD (build → ECR push → ECS deploy →     │  │
+│  │  CI (test  │   │  CD (build → ECR push → EKS deploy →     │  │
 │  │  lint scan)│   │       smoke test → notify)               │  │
 │  └────────────┘   └──────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -365,21 +365,25 @@ sre-platform/
 ## Key Design Decisions
 
 **Why multi-window burn rate alerts?**
+
 Single-window alerts (e.g., "error rate > 1% for 5m") generate too many false positives.
 The multi-window approach from the Google SRE Workbook requires both a short and long window
 to exceed the threshold, filtering out brief spikes that self-resolve.
 
 **Why chaos endpoints in the app?**
+
 Instead of external fault injection tools, the app exposes `POST /chaos/*` endpoints to simulate
 failures deterministically. This makes it trivial to test the observability stack without infrastructure
 changes. In production, these would be behind an auth gate or removed entirely.
 
 **Why self-hosted Prometheus/Grafana over AWS CloudWatch?**
+
 CloudWatch is fine for AWS-native metrics, but Prometheus + Grafana gives you portable,
 vendor-agnostic SLO dashboards with PromQL's expressiveness. This is the stack most SRE
 teams run — learning it transfers directly.
 
 **Why EKS over ECS Fargate?**
+
 EKS gives you the full Kubernetes API — HPA, rolling updates, liveness/readiness probes,
 namespace isolation, and a declarative manifest model that's portable across any cloud.
 ECS is simpler to operate but is AWS-only and abstracts away primitives that most
