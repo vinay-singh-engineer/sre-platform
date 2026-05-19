@@ -1,10 +1,12 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "app/**"
+  # Auto-deploy disabled until AWS infrastructure is provisioned.
+  # Uncomment the block below once AWS_DEPLOY_ROLE_ARN secret is set.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "app/**"
   workflow_dispatch:
     inputs:
       image_tag:

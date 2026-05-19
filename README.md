@@ -4,7 +4,6 @@ A production-grade Site Reliability Engineering reference implementation on AWS.
 Demonstrates the full SRE lifecycle: instrumenting a service, defining SLOs,
 observing error budget burn rates, alerting, automated runbooks, and chaos engineering.
 
-
 ---
 
 ## Architecture
@@ -235,6 +234,23 @@ Add these secrets to your GitHub repository:
 | `AWS_DEPLOY_ROLE_ARN` | ARN of IAM role with ECS deploy permissions |
 
 The CI/CD uses OIDC — no long-lived AWS credentials stored in GitHub.
+
+---
+
+## How workflows are triggered | GitHub Actions
+
+This project uses **GitHub Actions** — GitHub's built-in CI/CD platform. Workflows are defined as YAML files in `.github/workflows/` and run on GitHub-hosted virtual machines called **runners** (`ubuntu-latest` here).
+
+Each workflow is made up of **jobs**, which contain **steps**. GitHub detects and registers them automatically when you push to the repo.
+
+Workflow files live in `.github/workflows/` — on Mac, folders starting with `.` are hidden in Finder; press `Cmd + Shift + .` to toggle visibility, or browse them directly in the GitHub UI under the repo's **Actions** tab.
+
+| Workflow | What it does | Trigger |
+|---|---|---|
+| `ci.yml` | Tests, lint, SAST, Docker build, Terraform validate | Automatically on every push or PR that touches `app/` |
+| `deploy.yml` | Build → ECR push → ECS deploy → smoke test | Manually only — go to **Actions → Deploy → Run workflow** in GitHub UI |
+
+> `deploy.yml` requires AWS infrastructure to be provisioned and `AWS_DEPLOY_ROLE_ARN` secret set before use.
 
 ---
 
