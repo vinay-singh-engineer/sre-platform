@@ -1,5 +1,7 @@
 # SRE Platform 🚀
 
+![CI](https://github.com/vinay-singh-engineer/sre-platform/actions/workflows/ci.yml/badge.svg)
+
 A production-grade Site Reliability Engineering reference implementation on AWS.
 Demonstrates the full SRE lifecycle: instrumenting a service, defining SLOs,
 observing error budget burn rates, alerting, automated runbooks, and chaos engineering.
