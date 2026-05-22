@@ -1,5 +1,6 @@
 # SRE Platform 🚀
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/vinay-singh-engineer/sre-platform/blob/main/LICENSE)
 ![CI](https://github.com/vinay-singh-engineer/sre-platform/actions/workflows/ci.yml/badge.svg)
 
 A production-grade Site Reliability Engineering reference implementation on AWS.
