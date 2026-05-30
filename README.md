@@ -66,7 +66,7 @@ observing error budget burn rates, alerting, automated runbooks, and chaos engin
 ## Quick Start — Local
 
 ```bash
-git clone https://github.com/your-org/sre-platform.git
+git clone https://github.com/vinay-singh-engineer/sre-platform.git
 cd sre-platform
 
 # Start the full stack (app + Prometheus + Grafana + Loki)
@@ -493,6 +493,6 @@ MIT — use freely, attribute appreciated.
 
 ## 💻 Author
 
-[Vinay Singh](https://vinay-singh-engineer.github.io/portfolio)
+[Vinay Singh](https://vinay-singh-engineer.github.io)
 
 ---
