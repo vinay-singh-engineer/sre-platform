@@ -1,11 +1,12 @@
 # Terraform
-terraform/environments/prod/terraform.tfvars
 terraform/environments/prod/.terraform/
 terraform/environments/prod/.terraform.lock.hcl
 terraform/**/.terraform/
 *.tfstate
 *.tfstate.backup
 *.tfplan
+tfplan
+*.tfvars
 
 # Python
 __pycache__/

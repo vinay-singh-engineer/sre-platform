@@ -89,20 +89,34 @@ jobs:
 
       - name: Smoke test
         run: |
-          LB_HOST=$(kubectl get service sre-platform \
-            --namespace sre-platform \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          TIMEOUT=600
+          INTERVAL=15
+          ELAPSED=0
+          LB_HOST=""
 
-          for i in {1..10}; do
-            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://$LB_HOST/health/ready" || echo "000")
-            echo "Attempt $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ]; then
-              echo "Smoke test passed."
-              exit 0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if [ -z "$LB_HOST" ]; then
+              LB_HOST=$(kubectl get service sre-platform \
+                --namespace sre-platform \
+                -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
             fi
-            sleep 15
+
+            if [ -n "$LB_HOST" ]; then
+              STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "http://$LB_HOST/health/ready" || echo "000")
+              echo "Elapsed ${ELAPSED}s: LB_HOST=$LB_HOST, HTTP $STATUS"
+              if [ "$STATUS" = "200" ]; then
+                echo "Smoke test passed."
+                exit 0
+              fi
+            else
+              echo "Elapsed ${ELAPSED}s: waiting for load balancer hostname..."
+            fi
+
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
           done
-          echo "Smoke test FAILED after 10 attempts"
+
+          echo "Smoke test FAILED after ${TIMEOUT}s"
           exit 1
 
       - name: Notify on failure

@@ -177,6 +177,18 @@ aws s3 mb s3://your-tf-state-bucket --region us-east-1
 aws s3api put-bucket-versioning \
   --bucket your-tf-state-bucket \
   --versioning-configuration Status=Enabled
+
+# Expire noncurrent state versions after 90 days to bound storage growth
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket your-tf-state-bucket \
+  --lifecycle-configuration '{
+    "Rules": [{
+      "ID": "expire-noncurrent-state-versions",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 90 }
+    }]
+  }'
 ```
 
 Update `terraform/environments/prod/main.tf` backend block with your bucket name.
