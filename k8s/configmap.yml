@@ -5,6 +5,6 @@ metadata:
   namespace: sre-platform
 data:
   ENVIRONMENT: "production"
-  APP_VERSION: "1.0.0"
+  APP_VERSION: "1.0.1"
   CHAOS_ERROR_RATE: "0.0"
   CHAOS_LATENCY_MS: "0"
