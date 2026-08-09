@@ -62,7 +62,7 @@ APP_INFO = Gauge(
 ITEM_COUNT = Gauge("items_total", "Total items stored")
 DB_STATUS = Gauge("db_up", "Database reachability (1=up, 0=down)")
 
-APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
+APP_VERSION = os.environ.get("APP_VERSION", "1.0.1")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 APP_INFO.labels(version=APP_VERSION, environment=ENVIRONMENT).set(1)
 
